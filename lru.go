@@ -26,6 +26,7 @@ type LRUCache struct {
 }
 
 type Entry struct {
+	// 这里之所以要记录 key，是因为需要在触发 LRU 进行删除时到 LRUCache.cache 中找到对应的项
 	key   string
 	value Value
 }
