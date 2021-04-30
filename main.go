@@ -14,7 +14,7 @@ func main() {
 	key2, value2 := "age", String("21")
 	key3, value3 := "hobby", String("Program")
 	cap := len(key1+key2+key3) + value1.Len() + value2.Len() + value3.Len()
-	cache := makeCache(
+	cache := makeLRUCache(
 		cap, func(k string, v Value) {
 			fmt.Println(k, "has been removed")
 		})

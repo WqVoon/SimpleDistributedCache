@@ -2,8 +2,8 @@ package main
 
 import "container/list"
 
-func makeCache(maxBytes int, onEvicted func(string, Value)) *Cache {
-	return &Cache{
+func makeLRUCache(maxBytes int, onEvicted func(string, Value)) *LRUCache {
+	return &LRUCache{
 		maxBytes:  maxBytes,
 		nBytes:    0,
 		ll:        list.New(),
@@ -12,7 +12,7 @@ func makeCache(maxBytes int, onEvicted func(string, Value)) *Cache {
 	}
 }
 
-type Cache struct {
+type LRUCache struct {
 	// 可使用的最大内存量
 	maxBytes int
 	// 当前已经使用的内存量
@@ -35,7 +35,7 @@ type Value interface {
 	Len() int
 }
 
-func (self *Cache) Get(key string) (value Value, done bool) {
+func (self *LRUCache) Get(key string) (value Value, done bool) {
 	if elm, ok := self.cache[key]; ok {
 		// 采用 LRU 算法，因此如果缓存的值被使用过，那么放到队列末尾
 		self.ll.MoveToBack(elm)
@@ -47,7 +47,7 @@ func (self *Cache) Get(key string) (value Value, done bool) {
 	return
 }
 
-func (self *Cache) Remove() {
+func (self *LRUCache) Remove() {
 	elm := self.ll.Front()
 	if elm != nil {
 		kv := elm.Value.(*Entry)
@@ -64,7 +64,7 @@ func (self *Cache) Remove() {
 	}
 }
 
-func (self *Cache) Add(key string, value Value) {
+func (self *LRUCache) Add(key string, value Value) {
 	if elm, ok := self.cache[key]; ok {
 		// 如果值已经存在，那么将其移动到队尾（标记为最近使用过）
 		// 并更新缓存的内存占用以及对应的值
@@ -84,7 +84,7 @@ func (self *Cache) Add(key string, value Value) {
 	}
 }
 
-func (self *Cache) Len() int {
+func (self *LRUCache) Len() int {
 	// 用来返回当前缓存了多少个键值对
 	return self.ll.Len()
 }
