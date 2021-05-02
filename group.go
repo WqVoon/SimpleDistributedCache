@@ -21,6 +21,7 @@ type Group struct {
 	getter    Getter
 	mainCache SafeCache
 	peers     PeerPicker
+	once      Once
 }
 
 var (
@@ -87,16 +88,21 @@ func (self *Group) Get(key string) (Chunk, error) {
 否则调用 peers.PickPeer(key) 获取节点 peer，并调用 getFromPeer(peer, key) 来从远程获取数据
 */
 func (self *Group) load(key string) (value Chunk, err error) {
-	if self.peers != nil {
-		if peer, ok := self.peers.PickPeer(key); ok {
-			if value, err = self.getFromPeer(peer, key); err == nil {
-				return value, nil
+	// 这里虽然 Do 内部的 fn 形成了外包以具备设置最外层的 value 和 err 的能力
+	// 但是由于 once 的缘故这里的 fn 不一定会执行，所以获取其返回值并主动赋值给 value 和 err 是必要的
+	tmpValue, err := self.once.Do(key, func() (Chunk, error) {
+		if self.peers != nil {
+			if peer, ok := self.peers.PickPeer(key); ok {
+				if value, err = self.getFromPeer(peer, key); err == nil {
+					return value, nil
+				}
+				log.Println("Failed to get from peer:", err)
 			}
-			log.Println("Failed to get from peer:", err)
 		}
-	}
 
-	return self.getLocally(key)
+		return self.getLocally(key)
+	})
+	return tmpValue, err
 }
 
 /*
