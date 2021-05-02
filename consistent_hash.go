@@ -31,6 +31,9 @@ func makeMap(replicas int, fn Hash) *Map {
 	return m
 }
 
+/*
+将 keys 中的每个键对应的 replicas 个虚拟节点加入到哈希环中
+*/
 func (self *Map) Add(keys ...string) {
 	for _, key := range keys {
 		for i := 0; i < self.replicas; i++ {
@@ -42,6 +45,9 @@ func (self *Map) Add(keys ...string) {
 	sort.Ints(self.keys)
 }
 
+/*
+根据一致性哈希算法利用 key 计算 self.hashMap 中对应的节点名
+*/
 func (self *Map) Get(key string) string {
 	// 表示当前哈希环上没有任何数据，直接返回
 	if len(self.keys) == 0 {

@@ -6,7 +6,6 @@ import (
 	"sync"
 )
 
-//TODO：什么作用？
 type Getter interface {
 	Get(key string) ([]byte, error)
 }
@@ -21,6 +20,7 @@ type Group struct {
 	name      string
 	getter    Getter
 	mainCache SafeCache
+	peers     PeerPicker
 }
 
 var (
@@ -28,6 +28,9 @@ var (
 	groups = make(map[string]*Group)
 )
 
+/*
+初始化除 PeerPicker 外的所有属性，PeerPicker 需要调用 RegisterPeers 来注册
+*/
 func MakeGroup(name string, cacheBytes int, getter Getter) *Group {
 	if getter == nil {
 		panic("Nil Getter")
@@ -44,6 +47,16 @@ func MakeGroup(name string, cacheBytes int, getter Getter) *Group {
 	return g
 }
 
+/*
+注册 Group 的 PeerPicker
+*/
+func (self *Group) RegisterPeers(peers PeerPicker) {
+	if self.peers != nil {
+		panic("RegisterPeerPicker called more then once")
+	}
+	self.peers = peers
+}
+
 func GetGroup(name string) *Group {
 	mu.RLock()
 	g := groups[name]
@@ -51,6 +64,10 @@ func GetGroup(name string) *Group {
 	return g
 }
 
+/*
+尝试从自己的 mainCache 中获取 key 对应的缓存；
+如果找不到则调用 self.load 利用 Getter 或者从远程获取数据
+*/
 func (self *Group) Get(key string) (Chunk, error) {
 	// 这里处理空值，是为了防止缓存穿透
 	if key == "" {
@@ -65,11 +82,37 @@ func (self *Group) Get(key string) (Chunk, error) {
 	return self.load(key)
 }
 
+/*
+如果自己的 peers 属性为 nil，那么调用 getLocally 从本地获取；
+否则调用 peers.PickPeer(key) 获取节点 peer，并调用 getFromPeer(peer, key) 来从远程获取数据
+*/
 func (self *Group) load(key string) (value Chunk, err error) {
-	// 当前仅从本地获取数据
+	if self.peers != nil {
+		if peer, ok := self.peers.PickPeer(key); ok {
+			if value, err = self.getFromPeer(peer, key); err == nil {
+				return value, nil
+			}
+			log.Println("Failed to get from peer:", err)
+		}
+	}
+
 	return self.getLocally(key)
 }
 
+/*
+调用 peer.Get(self.name, key) 来获取数据
+*/
+func (self *Group) getFromPeer(peer PeerGetter, key string) (Chunk, error) {
+	bytes, err := peer.Get(self.name, key)
+	if err != nil {
+		return Chunk{}, err
+	}
+	return Chunk{b: bytes}, nil
+}
+
+/*
+调用自己的 Getter 来加载数据并保存到缓存中
+*/
 func (self *Group) getLocally(key string) (value Chunk, err error) {
 	// 调用 Group 的 Getter 来获取数据
 	bytes, err := self.getter.Get(key)

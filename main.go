@@ -1,44 +1,77 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
-	"strconv"
+	"net/http"
 )
 
+var db = map[string]string{
+	"Name":  "PsyDuck",
+	"Age":   "21",
+	"Hobby": "Program",
+}
+
+func createGroup() *Group {
+	return MakeGroup("info", 2<<10, GetterFunc(
+		func(key string) ([]byte, error) {
+			log.Println("search key", key, "from db")
+			if v, ok := db[key]; ok {
+				return []byte(v), nil
+			}
+			return nil, fmt.Errorf("%s not exists", key)
+		},
+	))
+}
+
+func startCacheServer(addr string, addrs []string, group *Group) {
+	peers := makeHTTPPool(addr)
+	peers.Set(addrs...)
+	group.RegisterPeers(peers)
+	log.Println("CacheServer is running at", addr)
+	log.Fatal(http.ListenAndServe(addr[7:], peers))
+}
+
+func startAPIServer(apiAddr string, group *Group) {
+	http.Handle("/api", http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			key := r.URL.Query().Get("key")
+			value, err := group.Get(key)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Write(value.ByteSlice())
+		},
+	))
+	log.Println("Fontend Server is running at", apiAddr)
+	log.Fatal(http.ListenAndServe(apiAddr[7:], nil))
+}
+
 func main() {
-	hash := makeMap(3, func(data []byte) uint32 {
-		ret, _ := strconv.Atoi(string(data))
-		return uint32(ret)
-	})
+	var port int
+	var api bool
+	flag.IntVar(&port, "port", 8001, "CacheServer port")
+	flag.BoolVar(&api, "api", false, "Start a api server?")
+	flag.Parse()
 
-	// 这时哈希环应该上增加了虚拟节点 2, 4, 12, 14, 22, 24
-	hash.Add("4", "2")
-	if fmt.Sprintln(hash.keys) != "[2 4 12 14 22 24]\n" {
-		log.Fatal("Add func error")
+	apiAddr := "http://localhost:9999"
+	addrMap := map[int]string{
+		8001: "http://localhost:8001",
+		8002: "http://localhost:8002",
+		8003: "http://localhost:8003",
 	}
 
-	testCases := map[string]string{
-		"2":  "2",
-		"11": "2",
-		"23": "4",
-		"27": "2",
+	var addrs []string
+	for _, v := range addrMap {
+		addrs = append(addrs, v)
 	}
 
-	for k, v := range testCases {
-		if hash.Get(k) != v {
-			log.Fatal("Get func err: ", k, "->", v)
-		}
+	cache := createGroup()
+	if api {
+		go startAPIServer(apiAddr, cache)
 	}
-
-	// 这里加入了 8，哈希环中应该加入了 8, 18, 28，同时 27 应该映射到 8
-	hash.Add("8")
-	if fmt.Sprintln(hash.keys) != "[2 4 8 12 14 18 22 24 28]\n" {
-		log.Fatal("Add func error")
-	}
-	if hash.Get("27") != "8" {
-		log.Fatal("Get func err: 27->8")
-	}
-
-	log.Println("All passed")
+	startCacheServer(addrMap[port], addrs, cache)
 }
